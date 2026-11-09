@@ -1,9 +1,18 @@
 # Nexos PDF — app Android (APK)
 
 WebView con la página local (`app/src/main/assets/index.html` + `pdf-lib.min.js`).
-Paquete `com.nexos.pdf`, versión 1.0 (versionCode 1), minSdk 24, targetSdk 35.
+Paquete `com.nexos.pdf`, versión 1.1 (versionCode 2), minSdk 24, targetSdk 35.
 
 ## Lo que hace la app (además de la página)
+
+- **Word→PDF en el teléfono (1.1, sin servidor):** la barra superior tiene
+  "Elegir Word (.docx)" (selector del sistema) y "Guardar como PDF".
+  El .docx se convierte a HTML con `DocxConverter.kt` (puro Kotlin, sin
+  dependencias: párrafos, títulos, formato, listas, tablas, enlaces e
+  imágenes en base64) y se muestra como vista previa; "Guardar como PDF"
+  abre el diálogo de impresión del sistema en tamaño carta. No necesita
+  internet ni el backend. Límites: se saltan imágenes EMF/WMF, macros y
+  objetos OLE.
 
 - **Selector de archivos:** los `<input type="file">` de la página abren el
   selector del sistema gracias a `onShowFileChooser` en `MainActivity.kt`.

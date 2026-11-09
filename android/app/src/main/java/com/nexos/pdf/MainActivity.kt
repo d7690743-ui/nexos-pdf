@@ -3,33 +3,42 @@ package com.nexos.pdf
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 
-/** Nexos PDF 1.0: WebView con la página local (assets/index.html).
- *  - Los inputs de archivo abren el selector del sistema (onShowFileChooser).
- *  - Las descargas usan el puente JS "Android.descargar": en Android 10+
- *    se guardan en Descargas/NexosPDF sin permisos; en versiones viejas
- *    van a los archivos de la app (Download). */
+/** Nexos PDF 1.1: WebView con la página local (assets/index.html) + conversión
+ *  Word→PDF en el teléfono, sin servidor.
+ *  - "Elegir Word (.docx)" abre el selector del sistema, convierte el archivo
+ *    a HTML con DocxConverter y lo muestra en el WebView como vista previa.
+ *  - "Guardar como PDF" imprime esa vista con el diálogo del sistema
+ *    (ahí se elige "Guardar como PDF", tamaño carta).
+ *  - Lo de la 1.0 sigue igual: file chooser para la página y puente JS
+ *    "Android.descargar" para guardar PDFs en Descargas/NexosPDF. */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private lateinit var botonGuardar: Button
+    private var nombreDoc: String? = null
     private var fileCallback: ValueCallback<Array<Uri>>? = null
 
     private val chooserLauncher = registerForActivityResult(
@@ -50,8 +59,37 @@ class MainActivity : AppCompatActivity() {
         fileCallback = null
     }
 
+    private val docxLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) convertirDocx(uri)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val botonElegir = Button(this).apply { text = "Elegir Word (.docx)" }
+        botonGuardar = Button(this).apply {
+            text = "Guardar como PDF"
+            isEnabled = false
+        }
+        botonElegir.setOnClickListener {
+            docxLauncher.launch(
+                arrayOf("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            )
+        }
+        botonGuardar.setOnClickListener { guardarPdf() }
+        val barra = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(16, 16, 16, 8)
+            addView(
+                botonElegir,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            )
+            addView(
+                botonGuardar,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            )
+        }
         webView = WebView(this)
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -71,12 +109,67 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
         }
+        val raiz = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(
+                barra,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+            addView(
+                webView,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            )
+        }
         webView.loadUrl("file:///android_asset/index.html")
-        setContentView(webView)
+        setContentView(raiz)
     }
 
     override fun onBackPressed() {
         if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+    }
+
+    /** Convierte el .docx a HTML en un hilo y lo muestra como vista previa. */
+    private fun convertirDocx(uri: Uri) {
+        Toast.makeText(this, "Convirtiendo…", Toast.LENGTH_SHORT).show()
+        Thread {
+            try {
+                val nombre = contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+                    } else null
+                } ?: "documento"
+                val html = contentResolver.openInputStream(uri)?.use { DocxConverter.convertir(it) }
+                    ?: throw IllegalStateException("No se pudo abrir el archivo")
+                runOnUiThread {
+                    nombreDoc = nombre.substringBeforeLast('.')
+                    webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                    botonGuardar.isEnabled = true
+                    Toast.makeText(
+                        this, "Listo: revisa y pulsa «Guardar como PDF»", Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "No se pudo convertir: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    /** Imprime la vista previa con el diálogo del sistema (tamaño carta). */
+    private fun guardarPdf() {
+        val trabajo = "${nombreDoc ?: "documento"}.pdf"
+        val pm = getSystemService(Context.PRINT_SERVICE) as PrintManager
+        val attrs = PrintAttributes.Builder()
+            .setMediaSize(PrintAttributes.MediaSize.NA_LETTER)
+            .setResolution(PrintAttributes.Resolution("pdf", "PDF", 300, 300))
+            .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
+            .build()
+        pm.print(trabajo, webView.createPrintDocumentAdapter(trabajo), attrs)
+        Toast.makeText(this, "Elige «Guardar como PDF» para descargar", Toast.LENGTH_LONG).show()
     }
 
     /** Recibe un PDF en base64 desde la página y lo guarda en el teléfono. */
