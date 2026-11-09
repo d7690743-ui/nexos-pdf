@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: nexos-pdf
+    env: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz

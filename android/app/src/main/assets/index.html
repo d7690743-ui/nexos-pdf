@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexos PDF — Word a PDF y unir PDFs</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f2f5f3; color: #1c2420; min-height: 100vh; }
+  header { background: #14532d; color: #fff; padding: 18px 16px; text-align: center; }
+  header h1 { font-size: 1.5rem; }
+  header p { font-size: .9rem; opacity: .85; margin-top: 4px; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 12px 40px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button { flex: 1; padding: 12px 8px; font-size: 1rem; font-weight: 600; border: 2px solid #14532d; border-radius: 10px; background: #fff; color: #14532d; cursor: pointer; }
+  .tabs button.active { background: #14532d; color: #fff; }
+  .card { background: #fff; border-radius: 12px; padding: 18px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .card h2 { font-size: 1.15rem; margin-bottom: 6px; }
+  .card p.desc { font-size: .92rem; color: #4b5563; margin-bottom: 14px; }
+  .drop { border: 2px dashed #9ca3af; border-radius: 10px; padding: 22px 12px; text-align: center; color: #4b5563; font-size: .95rem; cursor: pointer; }
+  .drop:hover, .drop.over { border-color: #14532d; color: #14532d; }
+  input[type=file] { display: none; }
+  .btn { display: block; width: 100%; padding: 13px; margin-top: 14px; font-size: 1.02rem; font-weight: 700; border: none; border-radius: 10px; background: #16a34a; color: #fff; cursor: pointer; }
+  .btn:disabled { background: #9ca3af; cursor: default; }
+  .btn.secondary { background: #14532d; }
+  .status { margin-top: 12px; font-size: .93rem; min-height: 1.2em; }
+  .status.ok { color: #15803d; }
+  .status.err { color: #b91c1c; }
+  .filelist { list-style: none; margin-top: 12px; }
+  .filelist li { display: flex; align-items: center; gap: 8px; padding: 9px 6px; border-bottom: 1px solid #e5e7eb; font-size: .93rem; }
+  .filelist li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filelist li .pages { color: #6b7280; font-size: .82rem; white-space: nowrap; }
+  .filelist li button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 4px 8px; font-size: .85rem; cursor: pointer; }
+  .filelist li button:hover { border-color: #14532d; color: #14532d; }
+  .download { display: none; margin-top: 14px; text-align: center; }
+  .download a { display: inline-block; padding: 12px 22px; background: #14532d; color: #fff; font-weight: 700; text-decoration: none; border-radius: 10px; }
+  .note { margin-top: 14px; font-size: .82rem; color: #6b7280; text-align: center; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📄 Nexos PDF</h1>
+  <p>Word a PDF y unir PDFs, gratis y sin registro</p>
+</header>
+<main>
+  <div class="tabs">
+    <button id="tabWord" class="active" onclick="mostrar('word')">Word a PDF</button>
+    <button id="tabUnir" onclick="mostrar('unir')">Unir PDFs</button>
+  </div>
+
+  <!-- ============ WORD A PDF ============ -->
+  <section id="panelWord" class="card">
+    <h2>Word a PDF</h2>
+    <p class="desc">Sube tu archivo de Word (.doc, .docx) y te lo devuelvo en PDF, con el mismo formato.</p>
+    <label class="drop" id="dropWord" for="inputWord">Toca aquí o arrastra tu archivo de Word</label>
+    <input type="file" id="inputWord" accept=".doc,.docx,.odt,.rtf,.txt">
+    <div class="status" id="statusWord"></div>
+    <button class="btn" id="btnWord" onclick="convertirWord()" disabled>Convertir a PDF</button>
+    <div class="download" id="dlWord"><a id="linkWord" href="#" download>⬇ Descargar PDF</a></div>
+    <p class="note">La conversión se hace en nuestro servidor. Tus archivos no se guardan.</p>
+  </section>
+
+  <!-- ============ UNIR PDFS ============ -->
+  <section id="panelUnir" class="card hidden">
+    <h2>Unir PDFs</h2>
+    <p class="desc">Sube dos o más PDFs, ordénalos como quieras y únelos en un solo archivo.</p>
+    <label class="drop" id="dropUnir" for="inputUnir">Toca aquí o arrastra tus PDFs</label>
+    <input type="file" id="inputUnir" accept=".pdf" multiple>
+    <ul class="filelist" id="listaPdfs"></ul>
+    <div class="status" id="statusUnir"></div>
+    <button class="btn" id="btnUnir" onclick="unirPdfs()" disabled>Unir PDFs</button>
+    <div class="download" id="dlUnir"><a id="linkUnir" href="#" download>⬇ Descargar PDF unido</a></div>
+    <p class="note">La unión se hace en tu teléfono, sin subir nada a ningún servidor.</p>
+  </section>
+</main>
+
+<script src="pdf-lib.min.js"></script>
+<script>
+/* ============================================================
+   CONFIGURACIÓN: pon aquí la URL pública de tu backend cuando
+   lo despliegues en Render. Ejemplo:
+   const BACKEND_URL = "https://nexos-pdf.onrender.com";
+   Mientras esté vacío, el botón de Word a PDF avisa que falta
+   configurar el servidor. Unir PDFs no necesita servidor.
+   ============================================================ */
+const BACKEND_URL = "";
+
+const $ = id => document.getElementById(id);
+
+let blobWord = null, nombreWord = "";
+let blobUnir = null;
+
+/* Descarga un archivo. En la APK usa el puente Android (guarda en
+   Descargas/NexosPDF); en el navegador usa el enlace normal. */
+async function descargarArchivo(blob, nombre) {
+  if (window.Android && typeof window.Android.descargar === "function") {
+    try {
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      let bin = "";
+      const PASO = 8192;
+      for (let i = 0; i < buf.length; i += PASO) {
+        bin += String.fromCharCode.apply(null, buf.subarray(i, i + PASO));
+      }
+      window.Android.descargar(btoa(bin), nombre);
+      return;
+    } catch (e) { /* cae al método normal */ }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function mostrar(cual) {
+  $("panelWord").classList.toggle("hidden", cual !== "word");
+  $("panelUnir").classList.toggle("hidden", cual !== "unir");
+  $("tabWord").classList.toggle("active", cual === "word");
+  $("tabUnir").classList.toggle("active", cual === "unir");
+}
+
+/* ---------------- WORD A PDF ---------------- */
+let archivoWord = null;
+
+$("inputWord").addEventListener("change", e => {
+  if (e.target.files.length) elegirWord(e.target.files[0]);
+});
+["dragover","dragenter"].forEach(ev => $("dropWord").addEventListener(ev, e => { e.preventDefault(); $("dropWord").classList.add("over"); }));
+["dragleave","drop"].forEach(ev => $("dropWord").addEventListener(ev, e => { e.preventDefault(); $("dropWord").classList.remove("over"); }));
+$("dropWord").addEventListener("drop", e => {
+  if (e.dataTransfer.files.length) elegirWord(e.dataTransfer.files[0]);
+});
+
+function elegirWord(f) {
+  archivoWord = f;
+  $("dropWord").textContent = "📄 " + f.name + " (" + Math.round(f.size / 1024) + " KB)";
+  $("btnWord").disabled = false;
+  $("statusWord").textContent = "";
+  $("statusWord").className = "status";
+  $("dlWord").style.display = "none";
+}
+
+async function convertirWord() {
+  if (!archivoWord) return;
+  if (!BACKEND_URL) {
+    $("statusWord").textContent = "El servidor de conversión todavía no está configurado. Pon la URL del backend en BACKEND_URL dentro de index.html.";
+    $("statusWord").className = "status err";
+    return;
+  }
+  $("btnWord").disabled = true;
+  $("btnWord").textContent = "Convirtiendo…";
+  $("statusWord").textContent = "Subiendo y convirtiendo, espera unos segundos…";
+  $("statusWord").className = "status";
+  $("dlWord").style.display = "none";
+  try {
+    const form = new FormData();
+    form.append("file", archivoWord);
+    const res = await fetch(BACKEND_URL.replace(/\/$/, "") + "/convert", { method: "POST", body: form });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error("El servidor respondió " + res.status + (txt ? ": " + txt.slice(0, 120) : ""));
+    }
+    const blob = await res.blob();
+    const nombre = archivoWord.name.replace(/\.[^.]+$/, "") + ".pdf";
+    blobWord = blob;
+    nombreWord = nombre;
+    const link = $("linkWord");
+    link.textContent = "⬇ Descargar " + nombre;
+    link.onclick = e => { e.preventDefault(); descargarArchivo(blobWord, nombreWord); };
+    $("dlWord").style.display = "block";
+    $("statusWord").textContent = "Listo, tu PDF está convertido.";
+    $("statusWord").className = "status ok";
+  } catch (err) {
+    $("statusWord").textContent = "No se pudo convertir: " + err.message;
+    $("statusWord").className = "status err";
+  } finally {
+    $("btnWord").disabled = false;
+    $("btnWord").textContent = "Convertir a PDF";
+  }
+}
+
+/* ---------------- UNIR PDFS ---------------- */
+let archivosPdf = []; // [{file, bytes, pages}]
+
+$("inputUnir").addEventListener("change", async e => {
+  await agregarPdfs(e.target.files);
+  e.target.value = "";
+});
+["dragover","dragenter"].forEach(ev => $("dropUnir").addEventListener(ev, e => { e.preventDefault(); $("dropUnir").classList.add("over"); }));
+["dragleave","drop"].forEach(ev => $("dropUnir").addEventListener(ev, e => { e.preventDefault(); $("dropUnir").classList.remove("over"); }));
+$("dropUnir").addEventListener("drop", async e => { await agregarPdfs(e.dataTransfer.files); });
+
+async function agregarPdfs(files) {
+  for (const f of files) {
+    if (!/\.pdf$/i.test(f.name)) continue;
+    try {
+      const bytes = await f.arrayBuffer();
+      const doc = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+      archivosPdf.push({ file: f, bytes, pages: doc.getPageCount() });
+    } catch (err) {
+      $("statusUnir").textContent = "No se pudo leer " + f.name + " (¿es un PDF válido?).";
+      $("statusUnir").className = "status err";
+    }
+  }
+  pintarLista();
+  $("btnUnir").disabled = archivosPdf.length < 2;
+  if (archivosPdf.length >= 2) { $("statusUnir").textContent = ""; $("statusUnir").className = "status"; }
+}
+
+function pintarLista() {
+  const ul = $("listaPdfs");
+  ul.innerHTML = "";
+  archivosPdf.forEach((item, i) => {
+    const li = document.createElement("li");
+    const nombre = document.createElement("span");
+    nombre.className = "name";
+    nombre.textContent = item.file.name;
+    const pag = document.createElement("span");
+    pag.className = "pages";
+    pag.textContent = item.pages + (item.pages === 1 ? " pág." : " págs.");
+    const up = document.createElement("button");
+    up.textContent = "↑";
+    up.disabled = i === 0;
+    up.onclick = () => { mover(i, -1); };
+    const down = document.createElement("button");
+    down.textContent = "↓";
+    down.disabled = i === archivosPdf.length - 1;
+    down.onclick = () => { mover(i, 1); };
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.onclick = () => { archivosPdf.splice(i, 1); pintarLista(); $("btnUnir").disabled = archivosPdf.length < 2; };
+    li.append(nombre, pag, up, down, del);
+    ul.appendChild(li);
+  });
+}
+
+function mover(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= archivosPdf.length) return;
+  const tmp = archivosPdf[i];
+  archivosPdf[i] = archivosPdf[j];
+  archivosPdf[j] = tmp;
+  pintarLista();
+}
+
+async function unirPdfs() {
+  if (archivosPdf.length < 2) return;
+  $("btnUnir").disabled = true;
+  $("btnUnir").textContent = "Uniendo…";
+  $("statusUnir").textContent = "Uniendo " + archivosPdf.length + " PDFs…";
+  $("statusUnir").className = "status";
+  $("dlUnir").style.display = "none";
+  try {
+    const merged = await PDFLib.PDFDocument.create();
+    for (const item of archivosPdf) {
+      const src = await PDFLib.PDFDocument.load(item.bytes, { ignoreEncryption: true });
+      const pages = await merged.copyPages(src, src.getPageIndices());
+      pages.forEach(p => merged.addPage(p));
+    }
+    const bytes = await merged.save();
+    blobUnir = new Blob([bytes], { type: "application/pdf" });
+    const link = $("linkUnir");
+    link.textContent = "⬇ Descargar unidos.pdf";
+    link.onclick = e => { e.preventDefault(); descargarArchivo(blobUnir, "unidos.pdf"); };
+    $("dlUnir").style.display = "block";
+    $("statusUnir").textContent = "Listo, un solo PDF con " + merged.getPageCount() + " páginas.";
+    $("statusUnir").className = "status ok";
+  } catch (err) {
+    $("statusUnir").textContent = "No se pudo unir: " + err.message;
+    $("statusUnir").className = "status err";
+  } finally {
+    $("btnUnir").disabled = false;
+    $("btnUnir").textContent = "Unir PDFs";
+  }
+}
+</script>
+</body>
+</html>
