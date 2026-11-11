@@ -21,6 +21,20 @@ curl http://localhost:8000/healthz
 Necesitas LibreOffice instalado (`soffice` en el PATH). Límite: 10 MB por archivo,
 máximo 2 conversiones a la vez (para no reventar la RAM del plan gratis de Render).
 
+## Subir archivos
+
+- `GET /` abre una página para subir archivos desde el navegador.
+- `POST /upload` recibe varios archivos (campo `files`) y devuelve una URL
+  por cada uno: `{"archivos": [{"nombre", "url": "/f/…", "bytes"}]}`.
+- `GET /f/{token}` descarga un archivo subido.
+
+```bash
+curl -F "files=@foto.jpg" -F "files=@doc.pdf" http://localhost:8000/upload
+```
+
+Límite: 10 archivos, 25 MB cada uno. Ojo: en el plan gratis de Render el
+disco es efímero, los archivos se borran cuando el servicio se reinicia.
+
 ## Desplegarlo en Render (gratis)
 
 Opción A — con el blueprint (render.yaml en la raíz del repo):
